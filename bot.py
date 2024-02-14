@@ -9,6 +9,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 import datetime
+from selenium.webdriver.support.ui import Select
+
 
 
 
@@ -29,7 +31,8 @@ hoy_formateado = hoy.strftime("%d/%m/%Y")
 
 # Obtener el número de filas y columnas
 num_cols = sheet.max_column
-num_rows = sheet.max_row - 1
+num_rows = 0
+
 
 # Crear listas para almacenar los datos de cada columna
 codigo_venta_list = []
@@ -38,16 +41,19 @@ codigo_servicio_list = []
 servicio_list = []
 total_list = []
 converted_date = []
+data_dict_list = []
 
     # Iterar sobre las filas del Excel
 for index, row in enumerate(sheet.iter_rows(min_row=2, max_row=num_rows, values_only=True), start=2):
-        print(f'cantidad de filas: {num_rows}')
-        print(f'-------------------- Cargando factura nro:{index} ----------------------')
+    if any(value is not None for value in row):
         codigo_venta_list.append(row[0])
         fecha_list.append(row[1])
         codigo_servicio_list.append(row[2])
         servicio_list.append(row[3])
-        total_list.append(row[4])    
+        total_list.append(row[4])
+        num_rows += 1 #cantidad de filas con datos
+    else:
+        break    
 
 
 for i in fecha_list:
@@ -107,10 +113,15 @@ try:
             driver.switch_to.window(window_handle)
             break
     
-    time.sleep(3)
+    time.sleep(1)
     driver.execute_script("document.querySelector('div#encabezado_logo_afip img').src = 'https://res.cloudinary.com/practicaldev/image/fetch/s--Rr7K5gOm--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dbalas.gallerycdn.vsassets.io/extensions/dbalas/vscode-html2pug/0.0.2/1532242577062/Microsoft.VisualStudio.Services.Icons.Default'")
     driver.execute_script("document.querySelector('div#encabezado_logo_afip img').style.width = '4rem'")
+
     for index, row in enumerate(range(num_rows)):
+        current_row = index + 2
+        print("current row: ", current_row)
+        codigo_venta = sheet.cell(row=current_row, column=1).value
+
         btn_empresa = driver.find_element(By.CLASS_NAME, "btn_empresa")
         time.sleep(1)
         btn_empresa.click()
@@ -177,8 +188,96 @@ try:
         continuar = driver.find_element(By.XPATH, "//input[@value='Continuar >']")
         continuar.click()
 
+        consumidor_final = driver.find_element(By.XPATH, "//select[@name='idIVAReceptor']").click()
+        actions.send_keys(Keys.ARROW_DOWN)
+        actions.perform()
+        actions.send_keys(Keys.ARROW_DOWN)
+        actions.perform()
+        actions.send_keys(Keys.ARROW_DOWN)
+        actions.perform()
+        actions.send_keys(Keys.ENTER)
+        actions.perform()
+        
+        condiciones_de_venta = driver.find_element(By.ID, "formadepago7")
+        condiciones_de_venta.click()
+        time.sleep(1)
+        continuar = driver.find_element(By.XPATH, "//input[@value='Continuar >']")
+        continuar.click()
+
+        codigo_articulo = driver.find_element(By.XPATH, "//input[@class='soloTexto']")
+        codigo_articulo.send_keys(get_value(codigo_servicio_list, index, num_rows))
+        nombre_articulo = driver.find_element(By.ID, "detalle_descripcion1")
+        nombre_articulo.send_keys(get_value(servicio_list, index, num_rows))
+
+        unidad_medida = driver.find_element(By.XPATH, "//select[@name='detalleMedida']").click()
+        for _ in range(7):
+                actions.send_keys(Keys.ARROW_DOWN)
+
+        actions.perform()
+        actions.send_keys(Keys.ENTER)
+        actions.perform()
+
+        precio = driver.find_element(By.ID, "detalle_precio1")
+        precio.send_keys(get_value(total_list, index, num_rows))
+
+         # Verifica si el Código Venta es None o vacío en la fila siguiente
+        next_row = current_row + 1
+        next_codigo_venta = sheet.cell(row=next_row, column=1).value
+
+        # Verifica si el Código Venta es None o vacío
+        if next_codigo_venta is None or next_codigo_venta == "":
+            agregar_servicio = driver.find_element(By.XPATH, "//input[@value='Agregar línea descripción']")
+            agregar_servicio.click()   
+            #Desplazarse hasta la linea 2 usando TAB desde el elemento subtotal que es el unico anterior que tiene id
+            subtotal = driver.find_element(By.ID, "detalle_subtotal21")
+            subtotal.click()
+            actions.send_keys(Keys.TAB)
+            actions.perform()
+            actions.send_keys(Keys.TAB)
+            actions.perform()
+
+            next_codigo_servicio = sheet.cell(row=next_row, column=3).value
+            next_servicio = sheet.cell(row=next_row, column=4).value
+            next_total = sheet.cell(row=next_row, column=5).value
+                                                                                
+            # Agrega la información al diccionario
+            data_dict = {
+                    "Codigo Servicio": next_codigo_servicio,
+                    "Servicio": next_servicio,
+                    "Total": next_total
+                }
+            data_dict_list.append(data_dict)
+            print(data_dict_list)
+            actions.send_keys(data_dict_list[0]["Codigo Servicio"])
+            actions.perform()
+            actions.send_keys(Keys.TAB)
+            actions.perform()
+            actions.send_keys(data_dict_list[0]["Servicio"])
+            actions.perform()
+            time.sleep(2)
+            actions.send_keys(Keys.TAB)
+            actions.perform()
+            actions.send_keys(Keys.TAB)
+            actions.perform()
+
+            for _ in range(7):
+                actions.send_keys(Keys.ARROW_DOWN)
+            time.sleep(1)
+
+            actions.perform()
+            actions.send_keys(Keys.TAB)
+            actions.perform()
+            actions.send_keys(data_dict_list[0]["Total"]).perform()
+
+        print("continuar")
+        for _ in range(20):
+            actions.send_keys(Keys.TAB)
+        actions.perform()
+        actions.send_keys(Keys.ENTER).perform()
+
+
+
+        
 except Exception as e:
     print(f"Error: {str(e)}")
-
-
 
