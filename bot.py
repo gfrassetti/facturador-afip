@@ -226,6 +226,19 @@ try:
 
         # Verifica si el Código Venta es None o vacío
         if next_codigo_venta is None or next_codigo_venta == "":
+            # Agrega la información al diccionario
+            next_codigo_servicio = sheet.cell(row=next_row, column=3).value
+            next_servicio = sheet.cell(row=next_row, column=4).value
+            next_total = sheet.cell(row=next_row, column=5).value
+            
+            if next_codigo_servicio is not None or next_servicio is not None or next_total is not None:               
+            data_dict = {
+                    "Codigo Servicio": next_codigo_servicio,
+                    "Servicio": next_servicio,
+                    "Total": next_total
+                }
+            data_dict_list.append(data_dict)
+            
             agregar_servicio = driver.find_element(By.XPATH, "//input[@value='Agregar línea descripción']")
             agregar_servicio.click()   
             #Desplazarse hasta la linea 2 usando TAB desde el elemento subtotal que es el unico anterior que tiene id
@@ -234,19 +247,7 @@ try:
             actions.send_keys(Keys.TAB)
             actions.perform()
             actions.send_keys(Keys.TAB)
-            actions.perform()
-
-            next_codigo_servicio = sheet.cell(row=next_row, column=3).value
-            next_servicio = sheet.cell(row=next_row, column=4).value
-            next_total = sheet.cell(row=next_row, column=5).value
-                                                                                
-            # Agrega la información al diccionario
-            data_dict = {
-                    "Codigo Servicio": next_codigo_servicio,
-                    "Servicio": next_servicio,
-                    "Total": next_total
-                }
-            data_dict_list.append(data_dict)
+            actions.perform()                                                                           
             print(data_dict_list)
             actions.send_keys(data_dict_list[0]["Codigo Servicio"])
             actions.perform()
