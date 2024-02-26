@@ -232,13 +232,13 @@ try:
                 next_servicio = sheet.cell(row=next_row, column=4).value
                 next_total = sheet.cell(row=next_row, column=5).value
                 
-                if any(value is not None for value in [next_codigo_servicio, next_servicio, next_total]):
-                data_dict = {
-                        "Codigo Servicio": next_codigo_servicio,
-                        "Servicio": next_servicio,
-                        "Total": next_total
-                    }
-                data_dict_list.append(data_dict)
+                if all(value is not None for value in [next_codigo_servicio, next_servicio, next_total]):
+                    data_dict = {
+                            "Codigo Servicio": next_codigo_servicio,
+                            "Servicio": next_servicio,
+                            "Total": next_total
+                        }
+                    data_dict_list.append(data_dict)
                 
                 agregar_servicio = driver.find_element(By.XPATH, "//input[@value='Agregar línea descripción']")
                 agregar_servicio.click()   
