@@ -1,0 +1,7 @@
+progreso_facturador.txt
+facturador_historial.log
+venv/
+__pycache__/
+build/
+dist/
+*.spec
