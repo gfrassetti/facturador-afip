@@ -13,7 +13,7 @@ from selenium.webdriver.support.ui import Select
 
 
 # Ruta al archivo Excel local
-archivo_excel = r'C:\Users\Guido\Desktop\facturador-afip\Facturador.xlsx'
+archivo_excel = "BOT.xlsx"
 
 
 """ Credentials """
@@ -22,7 +22,7 @@ password = "FIfi180686"
 """  """
 # Cargar el libro de Excel
 workbook = openpyxl.load_workbook(archivo_excel, data_only=True)
-sheet = workbook["Sheet5"]
+sheet = workbook["Facturador"]
 hoy = datetime.datetime.now()
 hoy_formateado = hoy.strftime("%d/%m/%Y")
 
@@ -40,8 +40,8 @@ total_list = []
 converted_date = []
 data_dict_list = []
 
-# Iterar sobre las filas del Excel
-for index, row in enumerate(sheet.iter_rows(min_row=2, max_row=num_rows, values_only=True), start=2):
+# Iterar sobre las filas del Excel (max_row del sheet, no num_rows: aún está en 0)
+for index, row in enumerate(sheet.iter_rows(min_row=2, max_row=sheet.max_row, values_only=True), start=2):
     if any(value is not None for value in row):
         codigo_venta_list.append(row[0])
         fecha_list.append(row[1])
@@ -55,8 +55,10 @@ for index, row in enumerate(sheet.iter_rows(min_row=2, max_row=num_rows, values_
 
 for i in fecha_list:
     if i is not None:
-        converted_date.append(i.strftime("%d/%m/%Y")
-                              if i is not None else None)
+        if isinstance(i, (datetime.datetime, datetime.date)):
+            converted_date.append(i.strftime("%d/%m/%Y"))
+        else:
+            converted_date.append(str(i))
 
 
 def get_value(list, index, num):
@@ -141,6 +143,11 @@ try:
     driver.execute_script(
         "document.querySelector('div#encabezado_logo_afip img').style.width = '4rem'")
 
+    # Primera vez en RCEL: empresa + Generar comprobantes + punto de venta (mismo orden que antes).
+    # Tras "Menú Principal": solo volver a pulsar Generar comprobantes; no repetir empresa.
+    # No borrar filas del Excel: el for avanza de fila solo.
+    empresa_seleccionada = False
+
     for index, row in enumerate(range(num_rows)):
         current_row = index + 2
         print("current row: ", current_row)
@@ -152,11 +159,22 @@ try:
                 f"Saltando fila {current_row} - no tiene código de venta (servicio adicional)")
             continue
 
-        btn_empresa = driver.find_element(By.CLASS_NAME, "btn_empresa")
-        time.sleep(1)
-        btn_empresa.click()
-        generar_comprobantes = driver.find_element(
-            By.ID, "btn_gen_cmp").click()
+        # Elegir empresa solo la primera vez que procesamos una fila con datos (no usar index==0: la fila 2 puede estar vacía)
+        if not empresa_seleccionada:
+            btn_empresa = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "btn_empresa")))
+            time.sleep(1)
+            btn_empresa.click()
+            time.sleep(1)
+            empresa_seleccionada = True
+
+        # Cada factura: id btn_gen_cmp (mismo que antes)
+        gen_cmp = wait.until(EC.element_to_be_clickable((By.ID, "btn_gen_cmp")))
+        try:
+            gen_cmp.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", gen_cmp)
+        time.sleep(2)
+
         puntos_de_venta = driver.find_element(
             By.XPATH, "//select[@name='puntoDeVenta']").click()
         actions.send_keys(Keys.ARROW_DOWN)
@@ -172,6 +190,7 @@ try:
         actions.send_keys(Keys.TAB)
         actions.perform()
 
+        """ continuar al formulario (mismo flujo que con ENTER sobre el foco) """
         actions.send_keys(Keys.ENTER)
         actions.perform()
 
@@ -191,12 +210,13 @@ try:
         else:
             fecha_str = ""
 
-        # Esperar a que el campo de fecha esté disponible
+        # Esperar el input fechaEmisionComprobante (id=fc), seleccionarlo y tipear la fecha de hoy
         wait = WebDriverWait(driver, 10)
         fecha = wait.until(EC.presence_of_element_located((By.ID, "fc")))
         time.sleep(1)
+        fecha.click()  # seleccionar el input para que tenga foco
         fecha.clear()
-        fecha.send_keys(fecha_str)
+        fecha.send_keys(hoy_formateado)  # insertar fecha de hoy (dd/mm/yyyy)
         time.sleep(2)
         actions.send_keys(Keys.TAB)
         actions.perform()
@@ -458,15 +478,43 @@ try:
             (By.XPATH, "//input[@value='Continuar >']")))
         continuar_btn.click()
 
-        # Esperar a que se procese y cargue la página de confirmación
+        # Esperar a que se procese y cargue la página de confirmación (resumen + Otros Tributos)
         time.sleep(4)
 
-        # Confirmar datos usando el botón "Confirmar Datos..." por su ID
-        print("Confirmando datos...")
-        confirmar_btn = wait.until(
-            EC.element_to_be_clickable((By.ID, "btngenerar")))
-        confirmar_btn.click()
-        # Esperar a que se procese la confirmación y genere el comprobante
+        # Paso 1: "Confirmar Datos..." abre el modal (observarOConfirmar); no saltar al modal sin esto
+        print("Confirmar Datos (btngenerar)...")
+        btn_confirmar_datos = wait.until(EC.element_to_be_clickable((By.ID, "btngenerar")))
+        try:
+            btn_confirmar_datos.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", btn_confirmar_datos)
+        time.sleep(2)
+
+        # Paso 2: modal jQuery "Generar Comprobante" → botón Confirmar
+        print("Confirmando generación del comprobante (modal)...")
+        confirmar_modal = (
+            "//div[@role='dialog' and contains(@class,'ui-dialog-buttons')]"
+            "[.//span[contains(@class,'ui-dialog-title') "
+            "and contains(normalize-space(.),'Generar Comprobante')]]"
+            "//div[contains(@class,'ui-dialog-buttonset')]"
+            "//button[.//span[normalize-space(.)='Confirmar']]"
+        )
+        confirmar_fallback = (
+            "(//div[contains(@class,'ui-dialog-buttonset')]"
+            "//button[.//span[normalize-space()='Confirmar']])[last()]"
+        )
+
+        def _click_confirmar(xpath):
+            el = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            try:
+                el.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", el)
+
+        try:
+            _click_confirmar(confirmar_modal)
+        except Exception:
+            _click_confirmar(confirmar_fallback)
         time.sleep(5)
 
         # Después de generar el comprobante, volver al menú principal para procesar la siguiente factura
