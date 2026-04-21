@@ -1,3 +1,11 @@
+# Paquetes instalables con pip:
 openpyxl
 selenium
 webdriver-manager
+
+# --- facturador_ui.py (stdlib, no pip) ---
+# queue, threading: biblioteca estándar.
+# pathlib: biblioteca estándar (Path).
+# tkinter + filedialog, messagebox, scrolledtext, ttk: vienen con Python
+#   en Windows (python.org, Tcl/Tk). Si fallan, reinstalá Python con Tcl/Tk.
+# sys: stdlib (no se lista como dependencia instalable).

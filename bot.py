@@ -1,3 +1,11 @@
+"""
+Lógica del facturador (Selenium + Excel).
+
+Los datos (ruta del .xlsx, CUIT, contraseña, nombre de hoja) NO se leen de
+variables globales para la UI: `facturador_ui.py` importa `ejecutar_facturador`
+y los pasa como argumentos. La línea de comandos (`if __name__ == "__main__"`)
+también llama a `ejecutar_facturador` con argparse.
+"""
 import openpyxl
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -13,7 +21,6 @@ import os
 from selenium.webdriver.support.ui import Select
 
 
-# Ruta al archivo Excel local
 # Última fila de Excel procesada con éxito (reanudar si el bot se corta). Borrar el archivo para empezar de cero.
 ARCHIVO_PROGRESO = "progreso_facturador.txt"
 ARCHIVO_LOG = "facturador_historial.log"
@@ -89,7 +96,22 @@ def ejecutar_facturador(
     log_print=print,
     al_terminar_lote=None,
 ):
-    """Ejecuta el bot: ruta al .xlsx, CUIT, clave, nombre de la hoja en el libro."""
+    """
+    Ejecuta el bot con los datos que le pasen (misma firma para UI y consola).
+
+    Parámetros
+    ----------
+    archivo_excel : str
+        Ruta absoluta o relativa al .xlsx (la elige el usuario en la interfaz o --excel en CLI).
+    cuit, password : str
+        Credenciales AFIP (campos de la UI o --cuit / --password en CLI).
+    nombre_hoja : str
+        Nombre de la pestaña del libro (campo «Nombre de la hoja» o --hoja).
+    log_print : callable
+        Por defecto print; la UI pasa una función que escribe en el registro.
+    al_terminar_lote : callable | None
+        Callback opcional (la UI lo usa para avisar al terminar el lote).
+    """
 
     def _log(*args, **kwargs):
         """Evita que flush=True rompa un log personalizado que no acepta kwargs."""

@@ -21,6 +21,17 @@ O a mano:
 pip install openpyxl selenium webdriver-manager
 ```
 
+## 2b. Módulos de `facturador_ui.py` (stdlib, sin pip)
+
+| Módulo | Nota |
+|--------|------|
+| `queue`, `threading` | Siempre con Python |
+| `pathlib` | Siempre con Python |
+| `tkinter` (+ `filedialog`, `messagebox`, `scrolledtext`, `ttk`) | Tcl/Tk con el instalador de python.org |
+| `sys` | Stdlib (solo uso interno de rutas) |
+
+Nada de esto va en `pip install`; si `import tkinter` falla, reinstalá Python con Tcl/Tk marcado.
+
 ## 3. Google Chrome
 
 - Tener **Google Chrome** instalado (no solo Edge).

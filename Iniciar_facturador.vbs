@@ -1,8 +1,16 @@
-' Solo interfaz, sin consola negra (pyw no abre terminal).
+' Interfaz sin consola negra. Usa el venv del proyecto (donde están selenium, etc.).
+Option Explicit
+Dim sh, fso, dir, py, venvPyw
 Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 dir = fso.GetParentFolderName(WScript.ScriptFullName)
-sh.CurrentDirectory = dir
 py = dir & "\facturador_ui.py"
-' 1 = ventana normal (se ve la app); False = no esperar a que termine
-sh.Run "pyw -3 """ & py & """", 1, False
+venvPyw = dir & "\.venv\Scripts\pythonw.exe"
+sh.CurrentDirectory = dir
+
+If fso.FileExists(venvPyw) Then
+  ' 1 = ventana normal; False = no bloquear
+  sh.Run """" & venvPyw & """ """ & py & """", 1, False
+Else
+  sh.Run "pyw -3 """ & py & """", 1, False
+End If

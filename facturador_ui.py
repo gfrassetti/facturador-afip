@@ -5,9 +5,11 @@ Interfaz gráfica — Facturador AFIP
   .exe sin ventana negra: pyinstaller --onefile --windowed --name FacturadorAFIP facturador_ui.py
 """
 
+import math
 import queue
 import sys
 import threading
+from typing import Optional
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -17,6 +19,197 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from bot import ejecutar_facturador, limpiar_progreso, resumen_progreso_excel
+
+# Captura de ejemplo para la ayuda (tooltip)
+RUTA_IMG_GUIA_EXCEL = _ROOT / "static" / "screenshoot.png"
+
+
+TEXTO_GUIA_EXCEL = """Cómo armar tu planilla
+
+Usá un archivo Excel (.xlsx). La primera fila puede tener títulos para vos
+(como «Código de venta», «Fecha»…); no hace falta un nombre exacto.
+
+Empezá a cargar ventas desde la segunda fila, de izquierda a derecha:
+
+1) Código de venta — número que identifica esa factura (solo en la primera
+   fila de cada venta).
+2) Fecha — la misma fila que el código (podés usar la fecha de Excel o
+   escribirla como 11/02/2026).
+3) Código del servicio o producto (por ejemplo 01 o 04).
+4) Nombre o detalle del servicio.
+5) Importe de esa línea (solo números).
+
+¿Una venta con varios ítems? En las filas de abajo cargá cada ítem con su
+código, nombre e importe, y dejá vacíos el código de venta y la fecha hasta
+empezar otra factura.
+
+Guardá en formato Excel (.xlsx) y elegí el archivo acá."""
+
+
+class SimpleTooltip:
+    """
+    Un solo contenido: solo texto O solo imagen (dos tooltips distintos en la UI).
+    Posición según el puntero al entrar; cierre diferido para poder pasar al cuadro.
+    """
+
+    _SHOW_MS = 280
+    _HIDE_MS = 450
+
+    def __init__(
+        self,
+        widget: tk.Widget,
+        *,
+        texto: Optional[str] = None,
+        imagen: Optional[Path] = None,
+        wraplength: int = 440,
+        max_ancho_imagen: int = 680,
+    ):
+        if (texto is None) == (imagen is None):
+            raise ValueError("SimpleTooltip: pasá solo texto=... o solo imagen=...")
+        self.widget = widget
+        self.texto = texto
+        self.imagen = imagen
+        self.wraplength = wraplength
+        self.max_ancho_imagen = max_ancho_imagen
+        self.tip: Optional[tk.Toplevel] = None
+        self._photo: Optional[tk.PhotoImage] = None
+        self._id_show: Optional[str] = None
+        self._id_hide: Optional[str] = None
+        self._x_root = 0
+        self._y_root = 0
+
+        widget.bind("<Enter>", self._enter)
+        widget.bind("<Motion>", self._motion)
+        widget.bind("<Leave>", self._leave)
+        widget.bind("<ButtonPress>", self._cerrar_ya)
+
+    def _motion(self, e):
+        self._x_root, self._y_root = e.x_root, e.y_root
+
+    def _enter(self, e):
+        self._x_root, self._y_root = e.x_root, e.y_root
+        self._cancel_hide()
+        self._cancel_show()
+        self._id_show = self.widget.after(self._SHOW_MS, self._abrir)
+
+    def _leave(self, _e=None):
+        self._cancel_show()
+        self._programar_cierre()
+
+    def _cancel_show(self):
+        if self._id_show:
+            self.widget.after_cancel(self._id_show)
+            self._id_show = None
+
+    def _cancel_hide(self):
+        if self._id_hide:
+            self.widget.after_cancel(self._id_hide)
+            self._id_hide = None
+
+    def _programar_cierre(self):
+        self._cancel_hide()
+        self._id_hide = self.widget.after(self._HIDE_MS, self._cerrar)
+
+    def _cerrar_ya(self, _e=None):
+        self._cancel_show()
+        self._cancel_hide()
+        self._cerrar()
+
+    def _cerrar(self):
+        self._id_hide = None
+        if self.tip:
+            try:
+                self.tip.destroy()
+            except tk.TclError:
+                pass
+            self.tip = None
+        self._photo = None
+
+    def _cargar_foto(self) -> Optional[tk.PhotoImage]:
+        if not self.imagen or not self.imagen.is_file():
+            return None
+        try:
+            photo = tk.PhotoImage(file=str(self.imagen))
+            w = photo.width()
+            if w > self.max_ancho_imagen:
+                step = max(2, math.ceil(w / self.max_ancho_imagen))
+                photo = photo.subsample(step, step)
+            return photo
+        except tk.TclError:
+            return None
+
+    def _abrir(self):
+        self._id_show = None
+        self._cancel_hide()
+        self._cerrar()
+
+        root = self.widget.winfo_toplevel()
+        self.tip = tk.Toplevel(root)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_attributes("-topmost", True)
+        self.tip.transient(root)
+        bg = "#fffde7"
+        borde = "#bdae5e"
+        marco = tk.Frame(self.tip, bg=bg, highlightthickness=1, highlightbackground=borde)
+        marco.pack()
+
+        if self.texto is not None:
+            tk.Label(
+                marco,
+                text=self.texto,
+                justify=tk.LEFT,
+                bg=bg,
+                fg="#263238",
+                font=("Segoe UI", 9),
+                wraplength=self.wraplength,
+                padx=12,
+                pady=10,
+            ).pack()
+        else:
+            self._photo = self._cargar_foto()
+            if self._photo:
+                tk.Label(marco, image=self._photo, bg=bg).pack(padx=8, pady=8)
+            else:
+                tk.Label(
+                    marco,
+                    text="(No se encontró la imagen de ejemplo)",
+                    bg=bg,
+                    fg="#666",
+                    padx=12,
+                    pady=8,
+                ).pack()
+
+        def en_tooltip(_e=None):
+            self._cancel_hide()
+
+        def salir_tooltip(_e=None):
+            self._programar_cierre()
+
+        for w in (self.tip, marco, *marco.winfo_children()):
+            w.bind("<Enter>", en_tooltip)
+            w.bind("<Leave>", salir_tooltip)
+
+        root.update_idletasks()
+        self.tip.update_idletasks()
+        tw = max(self.tip.winfo_reqwidth(), 80)
+        th = max(self.tip.winfo_reqheight(), 40)
+
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        m = 8
+        x = self._x_root + 14
+        y = self._y_root + 14
+        if x + tw > sw - m:
+            x = max(m, sw - tw - m)
+        if y + th > sh - m:
+            y = max(m, sh - th - m)
+        if x < m:
+            x = m
+        if y < m:
+            y = m
+
+        self.tip.geometry(f"+{x}+{y}")
+        self.tip.lift()
 
 
 class FacturadorApp:
@@ -66,11 +259,44 @@ class FacturadorApp:
         card = tk.Frame(outer, bg=self.CARD, padx=16, pady=14, highlightthickness=1, highlightbackground="#cfd8dc")
         card.pack(fill=tk.X, pady=(0, 10))
 
-        # Excel
+        # Excel (+ ayuda formato: tooltip)
         r0 = tk.Frame(card, bg=self.CARD)
         r0.pack(fill=tk.X, pady=(0, 10))
-        tk.Label(r0, text="Archivo Excel (.xlsx)", font=("Segoe UI", 9, "bold"), bg=self.CARD, fg="#37474f").pack(
-            anchor=tk.W
+        r0_lbl = tk.Frame(r0, bg=self.CARD)
+        r0_lbl.pack(fill=tk.X)
+        lbl_excel = tk.Label(
+            r0_lbl,
+            text="Archivo Excel (.xlsx)",
+            font=("Segoe UI", 9, "bold"),
+            bg=self.CARD,
+            fg="#37474f",
+        )
+        lbl_excel.pack(side=tk.LEFT, anchor=tk.W)
+        lbl_ayuda = tk.Label(
+            r0_lbl,
+            text="  ⓘ Cómo armar la planilla",
+            font=("Segoe UI", 9),
+            bg=self.CARD,
+            fg=self.INFO,
+            cursor="hand2",
+        )
+        lbl_ayuda.pack(side=tk.LEFT, anchor=tk.W)
+        SimpleTooltip(lbl_ayuda, texto=TEXTO_GUIA_EXCEL)
+
+        lbl_captura = tk.Label(
+            r0_lbl,
+            text="  🖼 Ejemplo visual",
+            font=("Segoe UI", 9),
+            bg=self.CARD,
+            fg=self.INFO,
+            cursor="hand2",
+        )
+        lbl_captura.pack(side=tk.LEFT, anchor=tk.W, padx=(10, 0))
+        SimpleTooltip(lbl_captura, imagen=RUTA_IMG_GUIA_EXCEL)
+
+        SimpleTooltip(
+            lbl_excel,
+            texto="Pasá el mouse sobre «ⓘ Cómo armar la planilla» o «🖼 Ejemplo visual».",
         )
         row = tk.Frame(r0, bg=self.CARD)
         row.pack(fill=tk.X, pady=(4, 0))
@@ -93,8 +319,21 @@ class FacturadorApp:
 
         r2 = tk.Frame(card, bg=self.CARD)
         r2.pack(fill=tk.X)
-        tk.Label(r2, text="Nombre de la hoja", font=("Segoe UI", 9, "bold"), bg=self.CARD, fg="#37474f").pack(
-            side=tk.LEFT
+        lbl_hoja = tk.Label(
+            r2,
+            text="Nombre de la hoja",
+            font=("Segoe UI", 9, "bold"),
+            bg=self.CARD,
+            fg="#37474f",
+        )
+        lbl_hoja.pack(side=tk.LEFT)
+        SimpleTooltip(
+            lbl_hoja,
+            texto=(
+                "Es el nombre de la pestaña del Excel (abajo, como las solapas). "
+                "Tiene que coincidir con la que usás en el archivo. Si no la cambiaste, dejá «Facturador»."
+            ),
+            wraplength=320,
         )
         ttk.Entry(r2, textvariable=self.var_hoja, width=28).pack(side=tk.LEFT, padx=(12, 0))
 
@@ -275,6 +514,7 @@ class FacturadorApp:
             self.root.after(0, self._al_fin_lote_ui)
 
         def worker():
+            # Todos los datos vienen de los campos de arriba; se pasan explícito a bot.ejecutar_facturador
             try:
                 ejecutar_facturador(
                     path,
