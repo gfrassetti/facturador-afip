@@ -1,10 +1,11 @@
 """
-Interfaz gráfica — Facturador AFIP
+Interfaz gráfica — Facturador ARCA
   python facturador_ui.py
   Sin consola: doble clic en Iniciar_facturador.vbs o: pyw -3 facturador_ui.py
-  .exe sin ventana negra: pyinstaller --onefile --windowed --name FacturadorAFIP facturador_ui.py
+  .exe sin ventana negra: pyinstaller --onefile --windowed --name FacturadorARCA facturador_ui.py
 """
 
+from bot import ejecutar_facturador, limpiar_progreso, resumen_progreso_excel
 import math
 import queue
 import sys
@@ -18,7 +19,6 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from bot import ejecutar_facturador, limpiar_progreso, resumen_progreso_excel
 
 # Captura de ejemplo para la ayuda (tooltip)
 RUTA_IMG_GUIA_EXCEL = _ROOT / "static" / "screenshoot.png"
@@ -65,7 +65,8 @@ class SimpleTooltip:
         max_ancho_imagen: int = 680,
     ):
         if (texto is None) == (imagen is None):
-            raise ValueError("SimpleTooltip: pasá solo texto=... o solo imagen=...")
+            raise ValueError(
+                "SimpleTooltip: pasá solo texto=... o solo imagen=...")
         self.widget = widget
         self.texto = texto
         self.imagen = imagen
@@ -150,7 +151,8 @@ class SimpleTooltip:
         self.tip.transient(root)
         bg = "#fffde7"
         borde = "#bdae5e"
-        marco = tk.Frame(self.tip, bg=bg, highlightthickness=1, highlightbackground=borde)
+        marco = tk.Frame(self.tip, bg=bg, highlightthickness=1,
+                         highlightbackground=borde)
         marco.pack()
 
         if self.texto is not None:
@@ -222,7 +224,7 @@ class FacturadorApp:
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Facturador AFIP")
+        self.root.title("Facturador ARCA")
         self.root.minsize(720, 560)
         self.root.configure(bg=self.BG)
 
@@ -243,7 +245,7 @@ class FacturadorApp:
         header.pack(fill=tk.X, pady=(0, 14))
         tk.Label(
             header,
-            text="Facturador AFIP",
+            text="Facturador ARCA",
             font=("Segoe UI", 20, "bold"),
             fg=self.ACCENT,
             bg=self.BG,
@@ -256,7 +258,8 @@ class FacturadorApp:
             bg=self.BG,
         ).pack(anchor=tk.W, pady=(4, 0))
 
-        card = tk.Frame(outer, bg=self.CARD, padx=16, pady=14, highlightthickness=1, highlightbackground="#cfd8dc")
+        card = tk.Frame(outer, bg=self.CARD, padx=16, pady=14,
+                        highlightthickness=1, highlightbackground="#cfd8dc")
         card.pack(fill=tk.X, pady=(0, 10))
 
         # Excel (+ ayuda formato: tooltip)
@@ -302,16 +305,20 @@ class FacturadorApp:
         row.pack(fill=tk.X, pady=(4, 0))
         ent_excel = ttk.Entry(row, textvariable=self.var_excel, width=70)
         ent_excel.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
-        ttk.Button(row, text="Examinar…", command=self._examinar_excel).pack(side=tk.RIGHT)
+        ttk.Button(row, text="Examinar…",
+                   command=self._examinar_excel).pack(side=tk.RIGHT)
 
         # Credenciales
-        cred = ttk.LabelFrame(card, text=" Credenciales AFIP ", padding=(12, 8))
+        cred = ttk.LabelFrame(
+            card, text=" Credenciales ARCA ", padding=(12, 8))
         cred.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(cred, text="CUIT (sin guiones)").grid(row=0, column=0, sticky=tk.W, pady=4)
+        ttk.Label(cred, text="CUIT (sin guiones)").grid(
+            row=0, column=0, sticky=tk.W, pady=4)
         ttk.Entry(cred, textvariable=self.var_cuit, width=48).grid(
             row=0, column=1, sticky=tk.EW, padx=(12, 0), pady=4
         )
-        ttk.Label(cred, text="Contraseña").grid(row=1, column=0, sticky=tk.W, pady=4)
+        ttk.Label(cred, text="Contraseña").grid(
+            row=1, column=0, sticky=tk.W, pady=4)
         ttk.Entry(cred, textvariable=self.var_password, show="•", width=48).grid(
             row=1, column=1, sticky=tk.EW, padx=(12, 0), pady=4
         )
@@ -335,17 +342,39 @@ class FacturadorApp:
             ),
             wraplength=320,
         )
-        ttk.Entry(r2, textvariable=self.var_hoja, width=28).pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Entry(r2, textvariable=self.var_hoja, width=28).pack(
+            side=tk.LEFT, padx=(12, 0))
 
         # Botones
         btns = tk.Frame(outer, bg=self.BG)
         btns.pack(fill=tk.X, pady=(4, 8))
-        self.btn_run = ttk.Button(btns, text="Empezar / Correr programa", command=self._ejecutar, style="Accent.TButton")
+        self.btn_run = ttk.Button(
+            btns, text="Empezar / Correr programa", command=self._ejecutar, style="Accent.TButton")
         self.btn_run.pack(side=tk.LEFT, padx=(0, 10), ipady=4, ipadx=12)
         ttk.Button(btns, text="Estado y reinicio de progreso…", command=self._dialogo_progreso).pack(
             side=tk.LEFT, padx=(0, 8), ipady=4
         )
-        ttk.Button(btns, text="Actualizar resumen", command=self._refrescar_estado).pack(side=tk.LEFT, ipady=4)
+        ttk.Button(btns, text="Actualizar resumen",
+                   command=self._refrescar_estado).pack(side=tk.LEFT, ipady=4)
+
+        aviso_bg = "#fff8e1"
+        aviso_fg = "#5d4037"
+        aviso = tk.Frame(outer, bg=aviso_bg, highlightthickness=1,
+                         highlightbackground="#ffcc80", padx=12, pady=10)
+        aviso.pack(fill=tk.X, pady=(6, 4))
+        tk.Label(
+            aviso,
+            text=(
+                "IMPORTANTE: mientras corre el programa: no pongas otras ventanas por encima de Chrome ni uses "
+                "el mouse y el teclado en otras cosas. El facturador controla el navegador solo; si "
+                "interferís (cambiar de ventana, clic fuera de lugar, etc.) puede fallar la carga en ARCA."
+            ),
+            font=("Segoe UI", 9),
+            bg=aviso_bg,
+            fg=aviso_fg,
+            wraplength=660,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W)
 
         self.lbl_estado = tk.Label(
             outer,
@@ -398,7 +427,8 @@ class FacturadorApp:
     def _examinar_excel(self):
         path = filedialog.askopenfilename(
             title="Elegir Excel",
-            filetypes=[("Libro Excel", "*.xlsx"), ("Todos los archivos", "*.*")],
+            filetypes=[("Libro Excel", "*.xlsx"),
+                       ("Todos los archivos", "*.*")],
         )
         if path:
             self.var_excel.set(path)
@@ -408,11 +438,14 @@ class FacturadorApp:
         path = self.var_excel.get().strip()
         hoja = self.var_hoja.get().strip()
         if not path or not hoja:
-            self.lbl_estado.config(text="Resumen: completá archivo y hoja para ver progreso.")
+            self.lbl_estado.config(
+                text="Resumen: completá archivo y hoja para ver progreso.")
             return
-        r = resumen_progreso_excel(path, hoja)
+        r, err = resumen_progreso_excel(path, hoja)
         if not r:
-            self.lbl_estado.config(text="Resumen: no se pudo leer el archivo o la hoja indicada.")
+            self.lbl_estado.config(
+                text="Resumen: "
+                + (err or "no se pudo leer el archivo o la hoja indicada."))
             return
         self.lbl_estado.config(
             text=(
@@ -432,9 +465,10 @@ class FacturadorApp:
                 "Indicá la ruta del Excel y el nombre de la hoja para calcular el progreso.",
             )
             return
-        r = resumen_progreso_excel(path, hoja)
+        r, err = resumen_progreso_excel(path, hoja)
         if not r:
-            messagebox.showerror("Error", "No se pudo leer el archivo o la hoja.")
+            messagebox.showerror(
+                "Error", err or "No se pudo leer el archivo o la hoja.")
             return
         msg = (
             f"Última fila guardada (checkpoint): {r['ultima_fila_checkpoint']}\n\n"
@@ -442,12 +476,13 @@ class FacturadorApp:
             f"Estimadas ya facturadas: {r['estimadas_ya_cargadas']}\n"
             f"Pendientes estimadas: {r['pendientes']}\n\n"
             "Si borrás el checkpoint, la próxima ejecución volverá a intentar todas las filas "
-            "(el bot no duplica en AFIP, pero conviene coordinar).\n\n"
+            "(el bot no duplica en ARCA, pero conviene coordinar).\n\n"
             "¿Borrar archivo de progreso y empezar desde cero la próxima vez?"
         )
         if messagebox.askyesno("Progreso y reinicio", msg, icon="question"):
             limpiar_progreso()
-            messagebox.showinfo("Listo", "Checkpoint borrado. La próxima corrida no omitirá filas por progreso.")
+            messagebox.showinfo(
+                "Listo", "Checkpoint borrado. La próxima corrida no omitirá filas por progreso.")
             self._refrescar_estado()
             self._log_plain("[INFO] Checkpoint borrado manualmente.\n")
 
@@ -508,7 +543,11 @@ class FacturadorApp:
 
         self._running = True
         self.btn_run.configure(state=tk.DISABLED)
-        self._log_plain("\n──────── Inicio de ejecución ────────\n")
+        self._log_plain(
+            "\n──────── Inicio de ejecución ────────\n"
+            "[INFO] Dejá Chrome al frente y no uses otras apps hasta que termine; "
+            "interferencias pueden romper el proceso.\n"
+        )
 
         def al_fin():
             self.root.after(0, self._al_fin_lote_ui)
@@ -527,7 +566,8 @@ class FacturadorApp:
             except Exception as e:
                 self._log_queue.put((f"\n[ERR] Error general: {e}\n", "err"))
             finally:
-                self._log_queue.put(("\n──────── Fin de ejecución ────────\n", None))
+                self._log_queue.put(
+                    ("\n──────── Fin de ejecución ────────\n", None))
                 self.root.after(0, self._fin_ejecucion)
 
         threading.Thread(target=worker, daemon=True).start()

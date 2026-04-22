@@ -18,6 +18,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 import datetime
 import os
+from typing import Optional, Tuple
+
 from selenium.webdriver.support.ui import Select
 
 
@@ -53,39 +55,83 @@ def limpiar_progreso():
         pass
 
 
-def resumen_progreso_excel(archivo_excel, nombre_hoja):
-    """
-    Devuelve dict con última fila OK, cantidad de filas con código de venta y pendientes,
-    o None si no se puede leer.
-    """
-    if not os.path.isfile(archivo_excel):
+def normalizar_ruta_excel(archivo_excel) -> str:
+    s = str(archivo_excel).strip().strip('"')
+    return os.path.normpath(os.path.expanduser(s))
+
+
+def resolver_hoja_en_libro(sheetnames, nombre_pedido) -> Optional[str]:
+    """Coincide exacto o sin distinguir mayúsculas/espacios al inicio/fin."""
+    nh = str(nombre_pedido or "").strip()
+    if not nh:
         return None
+    if nh in sheetnames:
+        return nh
+    cf = nh.casefold()
+    for s in sheetnames:
+        if str(s).strip().casefold() == cf:
+            return s
+    return None
+
+
+def resumen_progreso_excel(archivo_excel, nombre_hoja) -> Tuple[Optional[dict], str]:
+    """
+    Devuelve (dict con métricas, "") si ok, o (None, mensaje en español) si falla.
+    """
+    ruta = normalizar_ruta_excel(archivo_excel)
+    if not ruta:
+        return None, "La ruta del archivo está vacía."
+    if not os.path.isfile(ruta):
+        return None, f"No se encuentra el archivo: «{ruta}»."
+
+    wb = None
     try:
-        wb = openpyxl.load_workbook(archivo_excel, read_only=True, data_only=True)
-        if nombre_hoja not in wb.sheetnames:
-            wb.close()
-            return None
-        sh = wb[nombre_hoja]
+        wb = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+        hoja = resolver_hoja_en_libro(wb.sheetnames, nombre_hoja)
+        if hoja is None:
+            nh = str(nombre_hoja or "").strip()
+            hojas = list(wb.sheetnames)
+            preview = ", ".join(hojas[:15])
+            if len(hojas) > 15:
+                preview += ", …"
+            return None, (
+                f"No hay pestaña con el nombre «{nh or '(vacío)'}». "
+                f"Pestañas en el archivo: {preview or '(ninguna)'}"
+            )
+
+        sh = wb[hoja]
         ultima = cargar_ultima_fila_ok()
         con_codigo = 0
         pendientes = 0
-        for r in range(2, sh.max_row + 1):
-            v = sh.cell(row=r, column=1).value
+        # En read_only, max_row suele ser None (p. ej. libros con pivot); no usar range(2, max_row+1).
+        for r, row in enumerate(
+            sh.iter_rows(min_row=2, min_col=1, max_col=1, values_only=True),
+            start=2,
+        ):
+            v = row[0] if row else None
             if v is None or (isinstance(v, str) and not str(v).strip()):
                 continue
             con_codigo += 1
             if r > ultima:
                 pendientes += 1
-        wb.close()
         hechas = max(0, con_codigo - pendientes)
         return {
             "ultima_fila_checkpoint": ultima,
             "facturas_en_excel": con_codigo,
             "pendientes": pendientes,
             "estimadas_ya_cargadas": hechas,
-        }
-    except Exception:
-        return None
+        }, ""
+    except Exception as e:
+        return None, (
+            "No se pudo leer el Excel (¿archivo corrupto, .xls en lugar de .xlsx, o abierto "
+            f"en otro programa?). Detalle: {e}"
+        )
+    finally:
+        if wb is not None:
+            try:
+                wb.close()
+            except Exception:
+                pass
 
 
 def ejecutar_facturador(
@@ -104,7 +150,7 @@ def ejecutar_facturador(
     archivo_excel : str
         Ruta absoluta o relativa al .xlsx (la elige el usuario en la interfaz o --excel en CLI).
     cuit, password : str
-        Credenciales AFIP (campos de la UI o --cuit / --password en CLI).
+        Credenciales ARCA (campos de la UI o --cuit / --password en CLI).
     nombre_hoja : str
         Nombre de la pestaña del libro (campo «Nombre de la hoja» o --hoja).
     log_print : callable
@@ -118,16 +164,24 @@ def ejecutar_facturador(
         kwargs.pop("flush", None)
         log_print(*args, **kwargs)
 
-    if not os.path.isfile(archivo_excel):
-        raise FileNotFoundError(f"No se encuentra el archivo: {archivo_excel}")
+    ruta = normalizar_ruta_excel(archivo_excel)
+    if not ruta:
+        raise FileNotFoundError("La ruta del archivo está vacía.")
+    if not os.path.isfile(ruta):
+        raise FileNotFoundError(f"No se encuentra el archivo: {ruta}")
 
-    # Cargar el libro de Excel
-    workbook = openpyxl.load_workbook(archivo_excel, data_only=True)
-    if nombre_hoja not in workbook.sheetnames:
+    workbook = openpyxl.load_workbook(ruta, data_only=True)
+    hoja_ok = resolver_hoja_en_libro(workbook.sheetnames, nombre_hoja)
+    if hoja_ok is None:
+        nh = str(nombre_hoja or "").strip()
+        hojas = list(workbook.sheetnames)
+        preview = ", ".join(hojas[:15])
+        if len(hojas) > 15:
+            preview += ", …"
         raise ValueError(
-            f"No existe la hoja '{nombre_hoja}'. Hojas en el archivo: {workbook.sheetnames}"
+            f"No existe la hoja «{nh or '(vacío)'}». Pestañas en el archivo: {preview or '(ninguna)'}"
         )
-    sheet = workbook[nombre_hoja]
+    sheet = workbook[hoja_ok]
     hoy = datetime.datetime.now()
     hoy_formateado = hoy.strftime("%d/%m/%Y")
     
@@ -145,8 +199,12 @@ def ejecutar_facturador(
     converted_date = []
     data_dict_list = []
     
-    # Iterar sobre las filas del Excel (max_row del sheet, no num_rows: aún está en 0)
-    for index, row in enumerate(sheet.iter_rows(min_row=2, max_row=sheet.max_row, values_only=True), start=2):
+    # max_row puede ser None en libros raros; sin tope, iter_rows usa la dimensión del libro.
+    _mr = sheet.max_row
+    _iter_kw = dict(min_row=2, values_only=True)
+    if _mr is not None:
+        _iter_kw["max_row"] = _mr
+    for index, row in enumerate(sheet.iter_rows(**_iter_kw), start=2):
         if any(value is not None for value in row):
             codigo_venta_list.append(row[0])
             fecha_list.append(row[1])
@@ -480,7 +538,8 @@ def ejecutar_facturador(
                 # Manejar servicios adicionales (filas sin código de venta)
                 # Verificar múltiples servicios adicionales consecutivos
                 next_row = current_row + 1
-                max_excel_row = sheet.max_row
+                mr = sheet.max_row
+                max_excel_row = mr if mr is not None else 1048576
 
                 # Loop para agregar todos los servicios adicionales consecutivos
                 while next_row <= max_excel_row:
@@ -700,7 +759,7 @@ def ejecutar_facturador(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Facturador AFIP (línea de comandos)")
+    parser = argparse.ArgumentParser(description="Facturador ARCA (línea de comandos)")
     parser.add_argument("--excel", default="BOT.xlsx", help="Archivo Excel")
     parser.add_argument("--cuit", default="27321522616", help="CUIT sin guiones")
     parser.add_argument("--password", default="FIfi180686", help="Clave fiscal")
